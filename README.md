@@ -26,5 +26,5 @@
 9. metric_for_best_model
 5. max_seq_length
 
-Тут подробно описаны все гиперпараметры, влияюшие на обучение, для библиотеки transformers 
-https://huggingface.co/docs/transformers/perf_train_gpu_one
+Тут подробно описаны все гиперпараметры, влияюшие на обучение, для библиотеки transformers
+https://huggingface.co/docs/transformers/perf_train_gpu_one , часть гиперпараметров из списков выше покрыто.
