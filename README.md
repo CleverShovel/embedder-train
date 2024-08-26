@@ -1,6 +1,14 @@
+# Описание
+
+Используйте скрипт train.py для обучения.
+
+Есть также класс embedder_train.processing.data_splitter.StratifiedDataSplitter для деления датафрейма на train-val-test выборки в нужном соотношении, напрямую не использую при обучении, но решил все равно добавить.
+
+# Гиперпараметры
+
 Гиперпараметры, влияющие на потребляемую память и на скорость обучения:
 1. gradient_checkpointing
-3. per_device_train_batch_size желательно побольше >=128
+3. per_device_train_batch_size желательно побольше, >=128
 4. per_device_eval_batch_size
 5. distance_metric, cosine или dot
 6. torch_compile
