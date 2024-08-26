@@ -18,6 +18,7 @@ from sentence_transformers.losses import (
     BatchAllTripletLoss,
     BatchHardTripletLoss,
     BatchSemiHardTripletLoss,
+    BatchHardSoftMarginTripletLoss,
 )
 from sentence_transformers.losses.BatchHardTripletLoss import (
     BatchHardTripletLossDistanceFunction,
@@ -33,15 +34,21 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Triplet Loss Training Script")
 
     # Добавляем аргументы
-    parser.add_argument("--text_col", default="Суть ситуации", type=str, help="Name of the text column")
-    parser.add_argument("--label_col", default="Id", type=str, help="Name of the label column")
+    parser.add_argument(
+        "--text_col", default="Суть ситуации", type=str, help="Name of the text column"
+    )
+    parser.add_argument(
+        "--label_col", default="Id", type=str, help="Name of the label column"
+    )
     parser.add_argument(
         "--data_volume",
         default="train-embedder-cpu-datavol-1",
         type=str,
         help="Data volume path",
     )
-    parser.add_argument("--dataset_path", default=None, type=str, help="Override default dataset path")
+    parser.add_argument(
+        "--dataset_path", default=None, type=str, help="Override default dataset path"
+    )
     parser.add_argument(
         "--data_folds_path",
         default=None,
@@ -78,13 +85,17 @@ def parse_args():
         type=str,
         help="Base model path or name",
     )
-    parser.add_argument("--max_seq_length", default=512, type=int, help="Maximum sequence length")
-    parser.add_argument("--distance_metric", default="cosine", type=str, help="Distance metric to use")
+    parser.add_argument(
+        "--max_seq_length", default=512, type=int, help="Maximum sequence length"
+    )
+    parser.add_argument(
+        "--distance_metric", default="cosine", type=str, help="Distance metric to use"
+    )
     parser.add_argument(
         "--loss_func",
         default="BatchSemiHardTripletLoss",
         type=str,
-        help="Loss function to use",
+        help="Loss function to use. One of BatchAllTripletLoss, BatchHardTripletLoss, BatchSemiHardTripletLoss, BatchHardSoftMarginTripletLoss",
     )
     parser.add_argument(
         "--margin",
@@ -92,14 +103,18 @@ def parse_args():
         type=float,
         help="Margin for loss function if applicable",
     )
-    parser.add_argument("--seed", default=545454663, type=int, help="Random seed for initialization")
+    parser.add_argument(
+        "--seed", default=545454663, type=int, help="Random seed for initialization"
+    )
     parser.add_argument(
         "--max_steps",
         default=1000,
         type=int,
         help="Total number of training steps to perform",
     )
-    parser.add_argument("--log_steps", default=100, type=int, help="Number of steps to measure metrics")
+    parser.add_argument(
+        "--log_steps", default=100, type=int, help="Number of steps to measure metrics"
+    )
     parser.add_argument(
         "--per_device_train_batch_size",
         default=256,
@@ -221,12 +236,20 @@ class Config:
         # Paths
         self.data_volume = Path(self.args.data_volume)
         self.dataset_path = (
-            Path(self.args.dataset_path) if self.args.dataset_path else self.data_volume / "data" / "dataset-2"
+            Path(self.args.dataset_path)
+            if self.args.dataset_path
+            else self.data_volume / "data" / "dataset-2"
         )
         self.data_folds_path = (
-            Path(self.args.data_folds_path) if self.args.data_folds_path else self.dataset_path / "folds"
+            Path(self.args.data_folds_path)
+            if self.args.data_folds_path
+            else self.dataset_path / "folds"
         )
-        self.eval_data_path = Path(self.args.eval_data_path) if self.args.eval_data_path else self.dataset_path / "eval"
+        self.eval_data_path = (
+            Path(self.args.eval_data_path)
+            if self.args.eval_data_path
+            else self.dataset_path / "eval"
+        )
         self.train_path = self.data_folds_path / "train_data.parquet"
         self.val_path = self.data_folds_path / "val_data.parquet"
         self.test_path = self.data_folds_path / "test_data.parquet"
@@ -235,7 +258,9 @@ class Config:
 
         self.base_model = self.args.base_model
         self.artifacts_dir = (
-            Path(self.args.artifacts_dir) if self.args.artifacts_dir else self.data_volume / "artifacts"
+            Path(self.args.artifacts_dir)
+            if self.args.artifacts_dir
+            else self.data_volume / "artifacts"
         )
         self.current_time_str = datetime.now().strftime("%Y_%m_%d-%I_%M_%S_%p")
         self.experiment_name = (
@@ -311,22 +336,32 @@ def prepare_datasets(
     inverse_mapping = {c: idx for idx, c in enumerate(classes)}
 
     train_df = train_df.with_columns(
-        pl.col(label_col).replace(inverse_mapping, return_dtype=pl.Int32).alias(preprocessed_label_col)
+        pl.col(label_col)
+        .replace(inverse_mapping, return_dtype=pl.Int32)
+        .alias(preprocessed_label_col)
     )
     val_df = val_df.with_columns(
-        pl.col(label_col).replace(inverse_mapping, return_dtype=pl.Int32).alias(preprocessed_label_col)
+        pl.col(label_col)
+        .replace(inverse_mapping, return_dtype=pl.Int32)
+        .alias(preprocessed_label_col)
     )
     test_df = test_df.with_columns(
-        pl.col(label_col).replace(inverse_mapping, return_dtype=pl.Int32).alias(preprocessed_label_col)
+        pl.col(label_col)
+        .replace(inverse_mapping, return_dtype=pl.Int32)
+        .alias(preprocessed_label_col)
     )
 
     min_num_examples_threshold = 2
 
-    train_df = train_df.filter(pl.col(label_col).count().over(label_col) >= min_num_examples_threshold)
+    train_df = train_df.filter(
+        pl.col(label_col).count().over(label_col) >= min_num_examples_threshold
+    )
 
     def process_hf_dataset(dataset):
         dataset = dataset.select_columns([text_col, preprocessed_label_col])
-        dataset = dataset.rename_columns({text_col: "sentence", preprocessed_label_col: "label"})
+        dataset = dataset.rename_columns(
+            {text_col: "sentence", preprocessed_label_col: "label"}
+        )
         return dataset
 
     train_dataset = process_hf_dataset(Dataset.from_polars(train_df))
@@ -371,18 +406,24 @@ def prepare_loss(model, loss_name, **args):
     if loss_name == "BatchSemiHardTripletLoss":
         distance_metric = args["distance_metric"]
         margin = args["margin"]
-        loss = BatchSemiHardTripletLoss(model, distance_metric=distance_metric, margin=margin)
+        loss = BatchSemiHardTripletLoss(
+            model, distance_metric=distance_metric, margin=margin
+        )
     elif loss_name == "BatchHardTripletLoss":
         distance_metric = args["distance_metric"]
         margin = args["margin"]
-        loss = BatchHardTripletLoss(model, distance_metric=distance_metric, margin=margin)
+        loss = BatchHardTripletLoss(
+            model, distance_metric=distance_metric, margin=margin
+        )
     elif loss_name == "BatchHardSoftMarginTripletLoss":
         distance_metric = args["distance_metric"]
-        loss = BatchHardTripletLoss(model, distance_metric=distance_metric)
+        loss = BatchHardSoftMarginTripletLoss(model, distance_metric=distance_metric)
     elif loss_name == "BatchAllTripletLoss":
         distance_metric = args["distance_metric"]
         margin = args["margin"]
-        loss = BatchAllTripletLoss(model, distance_metric=distance_metric, margin=margin)
+        loss = BatchAllTripletLoss(
+            model, distance_metric=distance_metric, margin=margin
+        )
     return loss
 
 
@@ -475,7 +516,9 @@ def save_experiment_params(config, result_dir):
         eval_data_path=str(config.eval_data_path),
     )
 
-    model_params = dict(base_model=config.base_model, max_seq_length=config.max_seq_length)
+    model_params = dict(
+        base_model=config.base_model, max_seq_length=config.max_seq_length
+    )
 
     train_params = dict(
         distance_metric=config.distance_metric,
@@ -551,9 +594,13 @@ def main():
 
     model = init_model(config.base_model, max_seq_length=config.max_seq_length)
     distance_metric = get_distance_func(config.distance_metric)
-    loss = prepare_loss(model, config.loss_func, distance_metric=distance_metric, margin=config.margin)
+    loss = prepare_loss(
+        model, config.loss_func, distance_metric=distance_metric, margin=config.margin
+    )
     optimizer = AdamW(model.parameters(), lr=config.learning_rate, fused=True)
-    lr_scheduler = get_cosine_with_hard_restarts_schedule_with_warmup(optimizer, **config.lr_scheduler_kwargs)
+    lr_scheduler = get_cosine_with_hard_restarts_schedule_with_warmup(
+        optimizer, **config.lr_scheduler_kwargs
+    )
     batch_sampler = get_batch_sampler(config.batch_sampler)
 
     train(
